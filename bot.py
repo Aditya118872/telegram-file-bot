@@ -1,13 +1,11 @@
 import json
 import os
-import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, ContextTypes, filters
 
-logging.basicConfig(level=logging.INFO)
-
 TOKEN = os.getenv("BOT_TOKEN")
 DB_FILE = "db.json"
+DOMAIN = "https://infinityclouddownload.page.gd/download.php?id="
 
 def load_db():
     try:
@@ -21,38 +19,27 @@ def save_db(data):
         json.dump(data, f)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Send file → send keyword → /search keyword")
+    await update.message.reply_text("Upload file in group → then use /search filename")
 
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    file = msg.document or msg.video or (msg.photo[-1] if msg.photo else None)
+async def handle_group_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.chat.type in ["group", "supergroup"]:
+        msg = update.message
+        file = msg.document or msg.video or (msg.photo[-1] if msg.photo else None)
 
-    if file:
-        context.user_data["file_id"] = file.file_id
-        await msg.reply_text("📌 Send keyword to save this file")
+        if file:
+            file_id = file.file_id
+            name = msg.document.file_name.lower() if msg.document else "file"
 
-async def save_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "file_id" not in context.user_data:
-        return
+            db = load_db()
+            if name not in db:
+                db[name] = []
 
-    keyword = update.message.text.lower()
-    file_id = context.user_data["file_id"]
-
-    db = load_db()
-
-    if keyword not in db:
-        db[keyword] = []
-
-    db[keyword].append(file_id)
-    save_db(db)
-
-    del context.user_data["file_id"]
-
-    await update.message.reply_text(f"✅ Saved under: {keyword}")
+            db[name].append(file_id)
+            save_db(db)
 
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) == 0:
-        await update.message.reply_text("Use: /search keyword")
+    if not context.args:
+        await update.message.reply_text("Use: /search filename")
         return
 
     keyword = " ".join(context.args).lower()
@@ -63,15 +50,13 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     for file_id in db[keyword]:
-        file = await context.bot.get_file(file_id)
-        link = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+        link = f"{DOMAIN}{file_id}"
         await update.message.reply_text(f"📥 Download:\n{link}")
 
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("search", search))
-app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO | filters.PHOTO, handle_file))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_keyword))
+app.add_handler(MessageHandler(filters.ALL, handle_group_file))
 
 app.run_polling()
