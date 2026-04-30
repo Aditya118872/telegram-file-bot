@@ -4,11 +4,10 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
-
-# 🔗 अपना domain यहाँ डाल
 DOMAIN = "https://infinityclouddownload.page.gd/download.php?id="
 
 DB_FILE = "db.json"
+user_files = {}
 
 def load_db():
     try:
@@ -21,69 +20,59 @@ def save_db(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f)
 
-# 🟢 Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📌 Setup:\n\n1. Private group बनाओ\n2. Bot को admin बनाओ\n3. Group में file upload करो\n\n🔍 फिर use करो:\n/search filename"
-    )
+    await update.message.reply_text("Send file → then send keyword → /search keyword")
 
-# 🟢 Group में file detect
-async def handle_group_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.chat.type not in ["group", "supergroup"]:
-        return
-
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
-
-    file = None
-    filename = "file"
-
-    if msg.document:
-        file = msg.document
-        filename = msg.document.file_name.lower()
-
-    elif msg.video:
-        file = msg.video
-        filename = "video"
-
-    elif msg.photo:
-        file = msg.photo[-1]
-        filename = "image"
+    file = msg.document or msg.video or (msg.photo[-1] if msg.photo else None)
 
     if file:
-        file_id = file.file_id
+        user_files[msg.from_user.id] = file.file_id
+        await msg.reply_text("Send keyword")
 
-        db = load_db()
+async def save_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
 
-        if filename not in db:
-            db[filename] = []
+    if user_id not in user_files:
+        return
 
-        db[filename].append(file_id)
-        save_db(db)
+    keyword = update.message.text.lower()
+    file_id = user_files[user_id]
 
-        await msg.reply_text(f"✅ Saved: {filename}")
+    db = load_db()
 
-# 🟢 Search command
+    if keyword not in db:
+        db[keyword] = []
+
+    db[keyword].append(file_id)
+    save_db(db)
+
+    del user_files[user_id]
+
+    await update.message.reply_text(f"Saved under: {keyword}")
+
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❌ Use: /search filename")
+        await update.message.reply_text("Use: /search keyword")
         return
 
     keyword = " ".join(context.args).lower()
     db = load_db()
 
     if keyword not in db:
-        await update.message.reply_text("❌ File not found")
+        await update.message.reply_text("Not found")
         return
 
     for file_id in db[keyword]:
         link = f"{DOMAIN}{file_id}"
-        await update.message.reply_text(f"📥 Download:\n{link}")
+        await update.message.reply_text(link)
 
-# 🚀 Bot start
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("search", search))
-app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO | filters.PHOTO, handle_group_file))
+app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO | filters.PHOTO, handle_file))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, save_keyword))
 
 app.run_polling()
