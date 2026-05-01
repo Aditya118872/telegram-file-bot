@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
+DOMAIN = "https://infinityclouddownload.page.gd/download.php?id="
 
 DB_FILE = "db.json"
 user_files = {}
@@ -22,7 +23,6 @@ def save_db(data):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Send file → then send keyword → /search keyword")
 
-# 📤 File receive
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     file = msg.document or msg.video or (msg.photo[-1] if msg.photo else None)
@@ -31,7 +31,6 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_files[msg.from_user.id] = file.file_id
         await msg.reply_text("Send keyword")
 
-# 🏷 Keyword save
 async def save_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
 
@@ -53,7 +52,6 @@ async def save_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"Saved under: {keyword}")
 
-# 🔍 Search
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Use: /search keyword")
@@ -67,7 +65,8 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     for file_id in db[keyword]:
-        await update.message.reply_text(f"File found:\n{file_id}")
+        link = f"{DOMAIN}{file_id}"
+        await update.message.reply_text(f"Download:\n{link}")
 
 app = ApplicationBuilder().token(TOKEN).build()
 
